@@ -2,6 +2,17 @@ import { initNear, authdata as nearAuthData, login as nearLogin, logout as nearL
 import { toggleSpinner } from '../common/ui/progress-spinner.js';
 import { modal } from '../common/ui/modal.js';
 
+async function registerNearGitServiceWorker() {
+    await navigator.serviceWorker.register('/near-git-sw.js', { type: 'module' });
+    await navigator.serviceWorker.ready;
+
+    if (!navigator.serviceWorker.controller) {
+        await new Promise(resolve => {
+            navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+        });
+    }
+}
+
 export const CONFIG_FILE = 'wasmmusic.config.json';
 
 export let worker;
@@ -41,20 +52,33 @@ export async function initWASMGitClient(gitrepo) {
         workerMessageListeners = workerMessageListeners.filter(listener => listener(msg) === true);
     }
 
-    gitrepourl = `https://wasm-git.petersalomonsen.com/${gitrepo}`;
-
     try {
-        await initNear();
+        await initNear(gitrepo);
     } catch (e) {
         console.error('Failed to initialize near', e);
     }
+    await registerNearGitServiceWorker();
+
+    // Send NEAR credentials to the git worker so they're included as Authorization headers
     if (nearAuthData) {
-        worker.postMessage(nearAuthData);
-        const result = await new Promise((resolve) =>
-            workerMessageListeners.push((msg) => msg.data.accessTokenConfigured ? resolve(msg.data.accessTokenConfigured) : true)
-        );
-        console.log('Already logged in to near', result);
+        await new Promise(resolve => {
+            workerMessageListeners.push((msg) => {
+                if (msg.data.accessTokenConfigured) { resolve(); }
+                else { return true; }
+            });
+            worker.postMessage({
+                accessToken: JSON.stringify({
+                    accountId: nearAuthData.username,
+                    publicKey: nearAuthData.publicKey,
+                    privateKey: nearAuthData.privateKey,
+                }),
+                username: nearAuthData.username,
+                useremail: nearAuthData.useremail || nearAuthData.username,
+            });
+        });
     }
+
+    gitrepourl = `${location.origin}/near-repo/${gitrepo}.git`;
 
     let dircontents = await synclocal();
 
@@ -114,7 +138,20 @@ export async function synclocal() {
 }
 
 export async function deletelocal() {
-    await callAndWaitForWorker({ command: 'deletelocal' });
+    // Extract repo name from URL
+    const repoName = gitrepourl.substring(gitrepourl.lastIndexOf('/') + 1);
+
+    // Terminate the worker so it releases the OPFS lock
+    worker.terminate();
+
+    // Clear OPFS from the main thread (worker no longer holds the lock)
+    try {
+        const opfsRoot = await navigator.storage.getDirectory();
+        await opfsRoot.removeEntry(repoName, { recursive: true });
+        console.log('Deleted OPFS entry', repoName);
+    } catch (e) {
+        console.error('Error deleting from OPFS', repoName, e);
+    }
 
     if (await modal(`<p>Local clone deleted</p>
             <button onclick="getRootNode().result(null)">Dismiss</button>
@@ -125,9 +162,12 @@ export async function deletelocal() {
 }
 
 export async function pull() {
-    await callAndWaitForWorker({
+    const result = await callAndWaitForWorker({
         command: 'pull'
     });
+    remoteSyncListeners.forEach(remoteSyncListener => remoteSyncListener(result));
+    await repoHasChanges();
+    return result;
 }
 
 export async function commitAndSyncRemote(commitmessage) {
@@ -146,8 +186,16 @@ export async function readfile(filename) {
         command: 'readfile',
         filename: filename
     });
-    return await new Promise((resolve) =>
-        workerMessageListeners.push((msg) => msg.data.filename === filename ? resolve(msg.data.filecontents) : true)
+    return await new Promise((resolve, reject) =>
+        workerMessageListeners.push((msg) => {
+            if (msg.data.filename === filename) {
+                resolve(msg.data.filecontents);
+            } else if (msg.data.error && !msg.data.id) {
+                reject(new Error(msg.data.error));
+            } else {
+                return true;
+            }
+        })
     );
 }
 
@@ -316,17 +364,13 @@ customElements.define('wasmgit-ui',
                 this.shadowRoot.getElementById('loggedinuserspan').innerHTML = nearAuthData.username;
                 this.shadowRoot.getElementById('loggedinuserspan').style.display = 'block';
                 this.shadowRoot.getElementById('logoutButton').style.display = 'block';
-                this.shadowRoot.getElementById('logoutButton').onclick = async () => {
-                    await nearLogout();
-                    location.reload();
-                };
+                this.shadowRoot.getElementById('loginButton').style.display = 'none';
+                this.shadowRoot.getElementById('logoutButton').onclick = () => nearLogout();
             } else {
                 this.shadowRoot.getElementById('loginButton').style.display = 'block';
                 this.shadowRoot.getElementById('logoutButton').style.display = 'none';
                 this.shadowRoot.getElementById('loggedinuserspan').style.display = 'none';
-                this.shadowRoot.getElementById('loginButton').onclick = () => {
-                    nearLogin();
-                };
+                this.shadowRoot.getElementById('loginButton').onclick = () => nearLogin();
             }
             updateCommitAndSyncButtonState(await repoHasChanges());
         }

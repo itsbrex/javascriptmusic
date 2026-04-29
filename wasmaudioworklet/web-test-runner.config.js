@@ -21,7 +21,11 @@ export default {
       </body>
     </html>`,
   browsers: [
-    playwrightLauncher({ product: 'chromium', launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } }),
+    playwrightLauncher({
+      product: 'chromium',
+      launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
+      createBrowserContext: ({ browser }) => browser.newContext({ permissions: ['midi'] }),
+    }),
     playwrightLauncher({
       product: 'firefox', launchOptions: {
         headless: true,
