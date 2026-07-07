@@ -41,11 +41,23 @@ Waits until the specified beat number is reached.
 await waitForBeat(4);
 ```
 
+### `waitDuration(beats)`
+Advances the shared clock by `beats` beats **from the current position** (relative;
+`waitForBeat` is absolute). Also available as a track method (`track.waitDuration(...)`).
+
+**Example:**
+```javascript
+await waitDuration(16); // advance 16 beats before scheduling the next section
+```
+
 ### `playFromHere()`
 Resets playback to start from the current position, keeping only control change messages.
 
 ### `loopHere()`
-Marks the current position as a loop point.
+Marks the **end** of the song. When playback reaches this point it loops back to
+the **start** (beat 0). Anything sequenced *after* `loopHere()` is discarded and
+never plays — so call it once, as the last statement. It is not a "loop back to
+here" target; the loop always returns to the beginning.
 
 ---
 
