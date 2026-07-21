@@ -21,17 +21,26 @@ let sessionId = null;
 let agentMsgEl = null; // the in-progress assistant message element
 let toolQueue = Promise.resolve(); // serialize tool execution (see tool_call below)
 let conversation = []; // [{ role: 'user' | 'agent', text }] persisted to the repo
+// Latest compact summary of the SDK session. Persisted to the repo so a clone
+// on ANOTHER machine (where the SDK's local session store is absent) can start
+// a fresh session seeded with this summary instead of from nothing. Note the
+// conversation array itself is NEVER sent to the model — only the latest chat
+// text goes out; history lives in the SDK session (kept small by compaction).
+let sessionSummary = null;
 
-// Persist the conversation + SDK session id into the OPFS repo so it survives a
-// reload (and travels with the project). No-op when not in ?gitrepo= mode.
+// Persist the conversation + SDK session id + compact summary into the OPFS
+// repo so it survives a reload (and travels with the project). The full
+// conversation is kept as project history — it is replay/reference only, so
+// its size costs repo bytes, not model context. No-op when not in ?gitrepo= mode.
 async function saveSession() {
-  try { await writefileandstage(SESSION_FILE, JSON.stringify({ sessionId, conversation }, null, 1)); }
+  try { await writefileandstage(SESSION_FILE, JSON.stringify({ sessionId, summary: sessionSummary, conversation }, null, 1)); }
   catch (e) { /* no OPFS repo — in-memory only */ }
 }
 async function loadSession() {
   try {
     const data = JSON.parse(await readfile(SESSION_FILE));
     sessionId = data.sessionId || null;
+    sessionSummary = data.summary || null;
     conversation = Array.isArray(data.conversation) ? data.conversation : [];
     for (const m of conversation) addLine(m.role === 'user' ? 'user' : 'agent', m.text);
     if (conversation.length) { addLine('tool', `— resumed ${conversation.length} messages —`); }
@@ -95,36 +104,56 @@ const registry = {
   },
   // Write a .dsp AND transpile it to AssemblyScript (same as the app's faust save):
   // persists faust/<name>.dsp + faust/<name>.ts and reports the generated classes.
+  // Per-step timings are logged + appended to the result: manual runs are ~1s but
+  // agent-driven runs have been observed at 47-111s, so we need to see WHICH step
+  // stalls (git-worker write? transpile? UI refresh?) and the tab visibility
+  // (a hidden tab throttles main-thread work like the faust transpile hard).
   write_faust: async ({ path, source }) => {
     const rel = normDsp(path);
     const stem = rel.replace(/\.dsp$/, '');
+    const t0 = performance.now();
+    const marks = [`visibility=${document.visibilityState}`];
+    let last = t0;
+    const mark = (label) => { const now = performance.now(); marks.push(`${label}=${((now - last) / 1000).toFixed(1)}s`); last = now; };
     try {
       await writefileandstage(FAUST_DIR + rel, source);
+      mark('write-dsp');
       let ts;
       try {
         ({ ts } = await transpileDspSource(source, rel, {}));
       } catch (e) {
         return { __error: `Faust transpile failed for ${rel}: ${e?.message || e}` };
       }
+      mark('transpile');
       await writefileandstage(FAUST_DIR + stem + '.ts', ts);
+      mark('write-ts');
       // refresh the app's Faust file dropdown so the user sees the new instrument
       if (typeof window.refreshFaustFileList === 'function') { try { await window.refreshFaustFileList(); } catch { /* non-fatal */ } }
       // and reflect the written .dsp in the editor even when it's the file already
       // on screen (dropdown refresh alone won't reload the current selection).
       if (typeof window.showFaustFileInEditor === 'function') { try { await window.showFaustFileInEditor(FAUST_DIR + rel); } catch { /* non-fatal */ } }
-      return faustRegistrationHint(ts, stem).message;
+      mark('ui-refresh');
+      const timing = `${((performance.now() - t0) / 1000).toFixed(1)}s total (${marks.join(', ')})`;
+      console.log(`[studio-agent] write_faust ${rel}: ${timing}`);
+      return `${faustRegistrationHint(ts, stem).message} [timing: ${timing}]`;
     } catch (e) { return faustUnavailable(e); }
   },
   compile: async () => {
     try {
-      await window.compileSong();
+      // Same as the app's save button: saves + compiles AND applies the new
+      // wasm/eventlist to the audio worklet, so a track that is already
+      // playing becomes audible with the changes — without starting playback
+      // when stopped.
+      await window.saveSong();
     } catch (e) {
       return { __error: String(e?.message || e) };
     }
     const err = readErrorPanel();
     return err ? { __error: err } : 'compiled OK';
   },
-  play: async () => { await window.startaudio(); return 'playing'; },
+  // NOTE: intentionally NO `play` tool — starting playback is the user's
+  // action (play button). The agent saves via `compile`; a playing track
+  // picks the changes up live.
   stop: async () => { window.stopaudio(); return 'stopped'; },
 };
 
@@ -187,6 +216,19 @@ async function onMessage(msg) {
       setBusy(false);
       break;
     }
+    case 'compacting': // server-initiated proactive /compact of a large session
+      addLine('tool', `— auto-compacting conversation (~${Math.round((msg.tokens || 0) / 1000)}k tokens of context)… —`);
+      break;
+    case 'compact': // the SDK compacted the session (auto, or the user sent /compact)
+      addLine('tool', `— conversation compacted (${msg.metadata?.trigger || 'auto'}) —`);
+      break;
+    case 'summary': // the compact summary text — persist it with the session
+      sessionSummary = msg.text || null;
+      saveSession();
+      break;
+    case 'freshsession': // resume failed (e.g. repo opened on another machine)
+      addLine('tool', '— previous session not on this machine; started fresh from the saved summary —');
+      break;
     case 'error':
       addLine('error', `⚠ ${msg.error}`);
       finishAgentMessage();
@@ -199,15 +241,37 @@ async function onMessage(msg) {
 async function runTool({ id, name, args }) {
   const fn = registry[name];
   if (!fn) return reply(id, false, `unknown tool ${name}`);
+  // Tell the server execution has actually begun (the serial queue may have
+  // held this call for a while) — its run-timeout is armed from this moment,
+  // so a call waiting behind a heavy Faust transpile isn't falsely timed out.
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ t: 'tool_started', id }));
+  }
+  // Timing diagnostics: agent-driven tools have been observed 50-100x slower
+  // than the same operations run manually — log duration + tab visibility per
+  // tool so the stalling layer is identifiable in the browser console.
+  const t0 = performance.now();
+  const vis0 = document.visibilityState;
+  const finish = (ok) => {
+    const secs = (performance.now() - t0) / 1000;
+    if (secs > 2) console.warn(`[studio-agent] ${shortName(name)} took ${secs.toFixed(1)}s (${ok ? 'ok' : 'error'}, visibility ${vis0}→${document.visibilityState})`);
+    // The tool is done in the browser — anything from here on is the model
+    // reading the result. Without this, the status keeps blaming the last
+    // tool ("running grep_song… 51s") for what is model thinking time.
+    setPhase('thinking…');
+  };
   try {
     const result = await fn(args || {});
     if (result && result.__error) {
+      finish(false);
       addLine('error', `✗ ${shortName(name)}: ${result.__error}`);
       reply(id, false, result.__error);
     } else {
+      finish(true);
       reply(id, true, result);
     }
   } catch (e) {
+    finish(false);
     const emsg = String(e?.message || e);
     addLine('error', `✗ ${shortName(name)}: ${emsg}`);
     reply(id, false, emsg);
@@ -228,7 +292,9 @@ function sendChat(text) {
   startAgentMessage();
   setBusy(true);
   startActivity();
-  socket.send(JSON.stringify({ t: 'chat', text, sessionId }));
+  // summary rides along so the server can seed a FRESH session from it when
+  // the sessionId can't be resumed (SDK sessions are per-machine).
+  socket.send(JSON.stringify({ t: 'chat', text, sessionId, summary: sessionSummary }));
 }
 
 // ---- tiny UI helpers --------------------------------------------------------
@@ -263,10 +329,12 @@ function finishAgentMessage() { agentMsgEl = null; }
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 let activityTimer = null;
 let turnStartMs = 0;
+let phaseStartMs = 0;
 let activityPhase = '';
 let spinIdx = 0;
 function startActivity() {
   turnStartMs = Date.now();
+  phaseStartMs = turnStartMs;
   activityPhase = 'thinking…';
   const s = el('studioagentstatus');
   if (s) { s.classList.add('working'); s.classList.remove('idle'); }
@@ -274,11 +342,14 @@ function startActivity() {
   activityTimer = setInterval(renderActivity, 150);
   renderActivity();
 }
-function setPhase(p) { activityPhase = p; if (activityTimer) renderActivity(); }
+function setPhase(p) { activityPhase = p; phaseStartMs = Date.now(); if (activityTimer) renderActivity(); }
 function renderActivity() {
   spinIdx = (spinIdx + 1) % SPIN.length;
   const secs = Math.floor((Date.now() - turnStartMs) / 1000);
-  setStatus(`${SPIN[spinIdx]} ${activityPhase}  ${secs}s`);
+  const phaseSecs = Math.floor((Date.now() - phaseStartMs) / 1000);
+  // Per-phase elapsed first (what THIS step has taken), turn total after —
+  // "running compile… 751s" used to show turn time under the last tool's name.
+  setStatus(`${SPIN[spinIdx]} ${activityPhase} ${phaseSecs}s · ${secs}s total`);
 }
 function stopActivity(msg) {
   if (activityTimer) { clearInterval(activityTimer); activityTimer = null; }

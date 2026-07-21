@@ -35,7 +35,18 @@ export function onmidi(data) {
     });
 }
 
+// Stop path: the processor was told to terminate (it closes its message port),
+// so the node and message handler here are dead. They MUST be released —
+// posting to the closed port can never get a reply, and updateSynth awaiting
+// `wasmloaded` on it would hang forever (deadlocking e.g. the studio-agent's
+// serial tool queue behind a save that never resolves).
+export function releaseAudioWorklet() {
+    audioworkletnode = null;
+    workerMessageHandler = null;
+}
+
 export async function updateSong(sequencedata, toggleSongPlay) {
+    if (!audioworkletnode) return; // audio not running — nothing to update live
     audioworkletnode.port.postMessage({
         sequencedata: sequencedata,
         toggleSongPlay: toggleSongPlay
@@ -45,12 +56,31 @@ export async function updateSong(sequencedata, toggleSongPlay) {
 }
 
 export async function updateSynth(synthwasm, addedAudio) {
+    // Audio not running: nothing to swap live — the next startaudio picks up
+    // window.WASM_SYNTH_BYTES anyway.
+    if (!audioworkletnode) return;
     audioworkletnode.context.suspend();
-    await workerMessageHandler.callAndGetResult({
-        wasm: synthwasm,
-        audio: await Promise.all(addedAudio)
-    }, (msg) => msg.wasmloaded);
-    audioworkletnode.context.resume();
+    // Bounded wait: if the worklet can't reply (e.g. it terminated between
+    // the check above and the post), fail the save instead of hanging it.
+    // The timer MUST be cleared on the normal path — a leftover timeout
+    // firing later rejects the losing race promise unhandled, which wedges
+    // test runners (Firefox wtr) and pollutes the console.
+    let timer = null;
+    try {
+        await Promise.race([
+            workerMessageHandler.callAndGetResult({
+                wasm: synthwasm,
+                audio: await Promise.all(addedAudio)
+            }, (msg) => msg.wasmloaded),
+            new Promise((_, reject) => {
+                timer = setTimeout(() =>
+                    reject(new Error('updateSynth: no wasmloaded reply from the audio worklet within 20s')), 20000);
+            })
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+        if (audioworkletnode) audioworkletnode.context.resume();
+    }
 }
 
 async function connectAudioWorklet(context, wasm_synth_bytes, sequencedata, toggleSongPlay) {
@@ -135,12 +165,19 @@ export async function createAudioWorklet(context, wasm_synth_bytes, sequencedata
 }
 
 export async function getRecordedData() {
+    if (!workerMessageHandler) return [];
     return (await workerMessageHandler.callAndGetResult({ recorded: true },
         (msgdata) => msgdata.recorded ? true : false))
         .recorded;
 }
 
 export async function getCurrentTime() {
+    // A current-time poll may still tick after stopaudio released the worklet.
+    // null is the visualizer's "no clock" protocol: it clears the display and
+    // stops polling. (Returning a number here replays/holds the STALE song's
+    // notes in the visualizer — reporting 0 rewound it to the top and re-lit
+    // old notes in the target note states.)
+    if (!workerMessageHandler) return null;
     const currentTime = (await workerMessageHandler.callAndGetResult({ currentTime: true },
         (msgdata) => msgdata.currentTime !== undefined ? true : false))
         .currentTime;
