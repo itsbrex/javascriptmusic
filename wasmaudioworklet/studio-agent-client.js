@@ -8,7 +8,9 @@
 import { songsourceeditor, synthsourceeditor } from './editorcontroller.js';
 import { transpileDspSource } from './faust/browser-transpile.js';
 import { readfile, writefileandstage, listfiles, gitCommand, gitLog } from './wasmgit/wasmgitclient.js';
-import { applyEditToText, grepText, normDsp, faustRegistrationHint } from './studio-agent-tools-core.js';
+import { applyEditToText, grepText, normDsp, faustRegistrationHint, songSourceWarnings } from './studio-agent-tools-core.js';
+import { runAgentTurn, DEFAULT_BASE_URL, DEFAULT_MODEL, SERVERLESS_PROMPT_SUFFIX } from './studio-agent-nearai-core.js';
+import { SYSTEM_PROMPT } from './studio-agent-prompt.js';
 
 const DEFAULT_PORT = 17891;
 const FAUST_DIR = 'faust/';
@@ -65,11 +67,18 @@ function grepDoc(editor, args) {
 // Returning an object with `__error` marks a failed tool result.
 const registry = {
   get_song: async () => songsourceeditor.doc.getValue(),
-  set_song: async ({ source }) => { songsourceeditor.doc.setValue(source); return 'song updated'; },
+  set_song: async ({ source }) => {
+    songsourceeditor.doc.setValue(source);
+    return ['song updated', ...songSourceWarnings(source)].join(' ');
+  },
   get_synth: async () => synthsourceeditor.doc.getValue(),
   set_synth: async ({ source }) => { synthsourceeditor.doc.setValue(source); return 'synth updated'; },
   edit_synth: async (args) => applyEdit(synthsourceeditor, args),
-  edit_song: async (args) => applyEdit(songsourceeditor, args),
+  edit_song: async (args) => {
+    const result = applyEdit(songsourceeditor, args);
+    if (result && result.__error) return result;
+    return [result, ...songSourceWarnings(songsourceeditor.doc.getValue())].join(' ');
+  },
   grep_synth: async (args) => grepDoc(synthsourceeditor, args),
   grep_song: async (args) => grepDoc(songsourceeditor, args),
 
@@ -149,7 +158,14 @@ const registry = {
       return { __error: String(e?.message || e) };
     }
     const err = readErrorPanel();
-    return err ? { __error: err } : 'compiled OK';
+    if (!err) return 'compiled OK';
+    // The panel also surfaces NON-fatal AssemblyScript warnings (AS233/AS235…)
+    // after a successful build — reporting those as an error makes models
+    // "fix" working code. Only real ERROR lines fail the tool.
+    const text = err.replace(/^Error:\s*/, '');
+    const onlyWarnings = /^WARNING/.test(text) && !/(^|\n)\s*ERROR/.test(text);
+    if (onlyWarnings) return 'compiled OK (non-fatal AssemblyScript warnings in the panel — ignore them)';
+    return { __error: err };
   },
   // NOTE: intentionally NO `play` tool — starting playback is the user's
   // action (play button). The agent saves via `compile`; a playing track
@@ -172,18 +188,28 @@ function readErrorPanel() {
 
 // ---- WebSocket lifecycle ----------------------------------------------------
 function connect() {
+  // In NEAR AI mode the local agent isn't used: don't run the reconnect loop —
+  // its onclose fired every 3s, killing the activity spinner and stomping the
+  // status line ("connecting to ws://…") while a NEAR AI request was in flight.
+  if (nearaiConfig()) {
+    socket = null;
+    setStatus(`NEAR AI: ${nearaiConfig().model}`);
+    setTimeout(connect, RECONNECT_MS * 4); // re-check in case /nearai off
+    return;
+  }
   const port = window.STUDIO_AGENT_PORT || DEFAULT_PORT;
   setStatus(`connecting to ws://localhost:${port}…`);
   socket = new WebSocket(`ws://localhost:${port}`);
 
   socket.onopen = () => setStatus('connected');
   socket.onclose = () => {
+    if (nearaiConfig()) { setTimeout(connect, RECONNECT_MS); return; } // switched provider — leave UI alone
     if (activityTimer) { clearInterval(activityTimer); activityTimer = null; setBusy(false); }
     const s = el('studioagentstatus'); if (s) s.classList.remove('working');
     setStatus('disconnected — retrying…');
     setTimeout(connect, RECONNECT_MS);
   };
-  socket.onerror = () => setStatus('connection error (is studio-agent running?)');
+  socket.onerror = () => { if (!nearaiConfig()) setStatus('connection error (is studio-agent running?)'); };
   socket.onmessage = (ev) => onMessage(JSON.parse(ev.data));
 }
 
@@ -285,6 +311,21 @@ function reply(id, ok, result) {
 }
 
 function sendChat(text) {
+  // /nearai provider commands are handled locally and never enter the
+  // conversation (the API key must not be persisted into the OPFS repo).
+  if (text.startsWith('/nearai')) { handleNearaiCommand(text); return; }
+
+  if (nearaiConfig()) {
+    addLine('user', text);
+    conversation.push({ role: 'user', text });
+    saveSession();
+    startAgentMessage();
+    setBusy(true);
+    startActivity();
+    runNearaiTurn(text);
+    return;
+  }
+
   if (!socket || socket.readyState !== WebSocket.OPEN) { setStatus('not connected'); return; }
   addLine('user', text);
   conversation.push({ role: 'user', text });
@@ -295,6 +336,110 @@ function sendChat(text) {
   // summary rides along so the server can seed a FRESH session from it when
   // the sessionId can't be resumed (SDK sessions are per-machine).
   socket.send(JSON.stringify({ t: 'chat', text, sessionId, summary: sessionSummary }));
+}
+
+// ---- NEAR AI serverless provider (no local studio-agent process) ------------
+// Config lives in localStorage ONLY (never in the OPFS repo — it would get
+// committed and pushed with the project).
+function nearaiConfig() {
+  const apiKey = localStorage.getItem('nearai-api-key');
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    model: localStorage.getItem('nearai-model') || DEFAULT_MODEL,
+    baseUrl: localStorage.getItem('nearai-base-url') || DEFAULT_BASE_URL,
+  };
+}
+
+function handleNearaiCommand(text) {
+  const parts = text.trim().split(/\s+/).slice(1);
+  if (parts[0] === 'off') {
+    localStorage.removeItem('nearai-api-key');
+    addLine('tool', '— NEAR AI mode off; using the local studio-agent —');
+    if (!socket) connect();
+  } else if (parts[0] === 'model' && parts[1]) {
+    localStorage.setItem('nearai-model', parts[1]);
+    addLine('tool', `— NEAR AI model set to ${parts[1]} —`);
+  } else if (parts[0] && parts[0] !== 'model') {
+    localStorage.setItem('nearai-api-key', parts[0]);
+    if (parts[1]) localStorage.setItem('nearai-model', parts[1]);
+    nearaiMessages = null; // fresh model context on (re)configure
+    if (socket) { try { socket.onclose = null; socket.close(); } catch { /* */ } socket = null; }
+    setStatus(`NEAR AI: ${localStorage.getItem('nearai-model') || DEFAULT_MODEL}`);
+    addLine('tool', `— NEAR AI mode ON (model ${localStorage.getItem('nearai-model') || DEFAULT_MODEL}). '/nearai off' to switch back, '/nearai model <id>' to change model —`);
+  } else {
+    const cfg = nearaiConfig();
+    addLine('tool', cfg
+      ? `— NEAR AI mode ON: ${cfg.model} @ ${cfg.baseUrl} —`
+      : `— NEAR AI mode off. Usage: /nearai <api-key> [model] · /nearai model <id> · /nearai off —`);
+  }
+}
+
+// Serverless replacements for the local agent's repo-file access: fetch from
+// the public GitHub repo via jsDelivr instead of local disk.
+const REPO_CDN = 'https://cdn.jsdelivr.net/gh/petersalomonsen/javascriptmusic@master/';
+async function fetchRepoFile(path) {
+  const res = await fetch(REPO_CDN + path.replace(/^\/+/, ''));
+  if (!res.ok) throw new Error(`could not fetch ${path} (${res.status})`);
+  return res.text();
+}
+
+async function runNearaiServerlessTool(name, args) {
+  if (registry[name]) {
+    const result = await registry[name](args || {});
+    if (result && result.__error) throw new Error(result.__error);
+    return result;
+  }
+  if (name === 'read_repo_file') {
+    const text = await fetchRepoFile(args.path);
+    return text.length > 100000 ? `${text.slice(0, 100000)}\n…[truncated — file is ${text.length} chars; use load_synth_from_file/load_song_from_file for large bundles]` : text;
+  }
+  if (name === 'load_synth_from_file' || name === 'load_song_from_file') {
+    const content = await fetchRepoFile(args.path);
+    await registry[name === 'load_synth_from_file' ? 'set_synth' : 'set_song']({ source: content });
+    return `loaded ${args.path} (${content.split('\n').length} lines) into the ${name === 'load_synth_from_file' ? 'synth' : 'song'} editor`;
+  }
+  throw new Error(`unknown tool ${name}`);
+}
+
+let nearaiMessages = null; // model-visible history (in-memory for iteration 1)
+
+async function runNearaiTurn(text) {
+  const cfg = nearaiConfig();
+  if (!nearaiMessages) {
+    nearaiMessages = [{ role: 'system', content: SYSTEM_PROMPT + SERVERLESS_PROMPT_SUFFIX }];
+  }
+  nearaiMessages.push({ role: 'user', content: text });
+  setPhase(`${cfg.model.split('/').pop()} thinking…`);
+  try {
+    const { usage } = await runAgentTurn({
+      fetchFn: (...a) => fetch(...a),
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey,
+      model: cfg.model,
+      messages: nearaiMessages,
+      runTool: (name, args) => new Promise((resolve, reject) => {
+        // reuse the same serialization as WS tool calls; once the tool is
+        // done, everything after is the model reading the result — reset the
+        // phase so its time isn't blamed on the tool ("running compile… 49s").
+        toolQueue = toolQueue.then(() => runNearaiServerlessTool(name, args)
+          .then(resolve, reject)
+          .finally(() => setPhase(`${cfg.model.split('/').pop()} thinking…`)));
+      }),
+      onText: (t) => { appendAgentText(t); setPhase('responding…'); },
+      onToolCall: (name, args) => { addLine('tool', `⚙ ${name}`); setPhase(`running ${name}…`); },
+      onRetry: (status, delayMs, attempt) => { addLine('tool', `— ${status === 429 ? 'rate limited' : `upstream ${status}`}; retry ${attempt} in ${delayMs / 1000}s —`); setPhase(`retrying (${status})…`); },
+    });
+    const agentText = agentMsgEl ? agentMsgEl.textContent : '';
+    if (agentText) { conversation.push({ role: 'agent', text: agentText }); saveSession(); }
+    finishAgentMessage();
+    stopActivity(`done ✓ (${usage?.total_tokens ?? '?'} tokens)`);
+  } catch (e) {
+    addLine('error', `⚠ ${e?.message || e}`);
+    finishAgentMessage();
+    stopActivity('error ✗');
+  }
+  setBusy(false);
 }
 
 // ---- tiny UI helpers --------------------------------------------------------

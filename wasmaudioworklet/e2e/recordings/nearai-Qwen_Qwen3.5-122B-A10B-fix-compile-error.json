@@ -1,0 +1,571 @@
+[
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "tool_calls",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\n",
+      "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{}",
+         "name": "compile"
+        },
+        "id": "call_7aea426615eb4058b2b1540b",
+        "type": "function"
+       }
+      ]
+     }
+    }
+   ],
+   "created": 1784661300,
+   "id": "d2dea2853a4749eb8df8516d94d07e19",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 72,
+    "prompt_tokens": 7692,
+    "prompt_tokens_details": {
+     "cached_tokens": 2944
+    },
+    "reasoning_tokens": 57,
+    "total_tokens": 7764
+   }
+  }
+ },
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    },
+    {
+     "content": "\n\n",
+     "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_7aea426615eb4058b2b1540b",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_7aea426615eb4058b2b1540b",
+     "content": "ERROR: Error: ERROR TS2305: Module 'faust/sawbass' has no exported member 'SawbassChannel'.\n:\n2 │ import { Sawbass, SawbassChannel } from '../faust/sawbass';\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(2,19)\n\nERROR TS2304: Cannot find name 'SawbassChannel'.\n:\n5 │ midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(5,27)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n45 │ export class MidiChannel {\n│ ~~~~~~~~~~~\n└─ in midi/midisynth.ts(45,14)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n177 │ export abstract class MidiVoice {\n│ ~~~~~~~~~\n└─ in midi/midisynth.ts(177,23)\n\nFAILURE 2 compile error(s)"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "tool_calls",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\nThe error is that `SawbassChannel` is being imported and used, but the Faust transpiler only generated the `Sawbass` voice class — no `SawbassChannel` class exists. This happens when the Faust instrument only has the standard `freq`, `gate`, `gain` controls (no extra sliders), so only the voice class is exported.\n\nLet me check the current synth to see the exact import and usage:\n\n",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"pattern\": \"Sawbass\"}",
+         "name": "grep_synth"
+        },
+        "id": "call_9da8f5b57c0f4f28b2518c2f",
+        "type": "function"
+       }
+      ]
+     }
+    }
+   ],
+   "created": 1784661302,
+   "id": "fcab3c86b03342b2bad541d630098c48",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 127,
+    "prompt_tokens": 7988,
+    "prompt_tokens_details": {
+     "cached_tokens": 7616
+    },
+    "reasoning_tokens": 1,
+    "total_tokens": 8115
+   }
+  }
+ },
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    },
+    {
+     "content": "\n\n",
+     "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_7aea426615eb4058b2b1540b",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_7aea426615eb4058b2b1540b",
+     "content": "ERROR: Error: ERROR TS2305: Module 'faust/sawbass' has no exported member 'SawbassChannel'.\n:\n2 │ import { Sawbass, SawbassChannel } from '../faust/sawbass';\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(2,19)\n\nERROR TS2304: Cannot find name 'SawbassChannel'.\n:\n5 │ midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(5,27)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n45 │ export class MidiChannel {\n│ ~~~~~~~~~~~\n└─ in midi/midisynth.ts(45,14)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n177 │ export abstract class MidiVoice {\n│ ~~~~~~~~~\n└─ in midi/midisynth.ts(177,23)\n\nFAILURE 2 compile error(s)"
+    },
+    {
+     "content": "\n\nThe error is that `SawbassChannel` is being imported and used, but the Faust transpiler only generated the `Sawbass` voice class — no `SawbassChannel` class exists. This happens when the Faust instrument only has the standard `freq`, `gate`, `gain` controls (no extra sliders), so only the voice class is exported.\n\nLet me check the current synth to see the exact import and usage:\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"pattern\": \"Sawbass\"}",
+        "name": "grep_synth"
+       },
+       "id": "call_9da8f5b57c0f4f28b2518c2f",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_9da8f5b57c0f4f28b2518c2f",
+     "content": "2: import { Sawbass, SawbassChannel } from '../faust/sawbass';\n5:     midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "tool_calls",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\nThe fix is to:\n1. Remove `SawbassChannel` from the import\n2. Use `MidiChannel` instead of `SawbassChannel` for the midichannels registration\n\n",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"old_string\": \"import { Sawbass, SawbassChannel } from '../faust/sawbass';\", \"new_string\": \"import { Sawbass } from '../faust/sawbass';\"}",
+         "name": "edit_synth"
+        },
+        "id": "call_c785fc141ebc41e695fb6a3c",
+        "type": "function"
+       }
+      ]
+     }
+    }
+   ],
+   "created": 1784661305,
+   "id": "e9e2cc7bc3b94c05a1f195cee53a787a",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 120,
+    "prompt_tokens": 8184,
+    "prompt_tokens_details": {
+     "cached_tokens": 7936
+    },
+    "reasoning_tokens": 1,
+    "total_tokens": 8304
+   }
+  }
+ },
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    },
+    {
+     "content": "\n\n",
+     "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_7aea426615eb4058b2b1540b",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_7aea426615eb4058b2b1540b",
+     "content": "ERROR: Error: ERROR TS2305: Module 'faust/sawbass' has no exported member 'SawbassChannel'.\n:\n2 │ import { Sawbass, SawbassChannel } from '../faust/sawbass';\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(2,19)\n\nERROR TS2304: Cannot find name 'SawbassChannel'.\n:\n5 │ midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(5,27)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n45 │ export class MidiChannel {\n│ ~~~~~~~~~~~\n└─ in midi/midisynth.ts(45,14)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n177 │ export abstract class MidiVoice {\n│ ~~~~~~~~~\n└─ in midi/midisynth.ts(177,23)\n\nFAILURE 2 compile error(s)"
+    },
+    {
+     "content": "\n\nThe error is that `SawbassChannel` is being imported and used, but the Faust transpiler only generated the `Sawbass` voice class — no `SawbassChannel` class exists. This happens when the Faust instrument only has the standard `freq`, `gate`, `gain` controls (no extra sliders), so only the voice class is exported.\n\nLet me check the current synth to see the exact import and usage:\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"pattern\": \"Sawbass\"}",
+        "name": "grep_synth"
+       },
+       "id": "call_9da8f5b57c0f4f28b2518c2f",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_9da8f5b57c0f4f28b2518c2f",
+     "content": "2: import { Sawbass, SawbassChannel } from '../faust/sawbass';\n5:     midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));"
+    },
+    {
+     "content": "\n\nThe fix is to:\n1. Remove `SawbassChannel` from the import\n2. Use `MidiChannel` instead of `SawbassChannel` for the midichannels registration\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"old_string\": \"import { Sawbass, SawbassChannel } from '../faust/sawbass';\", \"new_string\": \"import { Sawbass } from '../faust/sawbass';\"}",
+        "name": "edit_synth"
+       },
+       "id": "call_c785fc141ebc41e695fb6a3c",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_c785fc141ebc41e695fb6a3c",
+     "content": "applied 1 edit(s)"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "tool_calls",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\n",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"old_string\": \"midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\", \"new_string\": \"midichannels[0] = new MidiChannel(8, (channel: MidiChannel) => new Sawbass(channel));\"}",
+         "name": "edit_synth"
+        },
+        "id": "call_a417bfeb81d04f2fb8f50242",
+        "type": "function"
+       }
+      ]
+     }
+    }
+   ],
+   "created": 1784661308,
+   "id": "c83f55dd8e1e4efa9d320a699de78e40",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 95,
+    "prompt_tokens": 8326,
+    "prompt_tokens_details": {
+     "cached_tokens": 8128
+    },
+    "reasoning_tokens": 1,
+    "total_tokens": 8421
+   }
+  }
+ },
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    },
+    {
+     "content": "\n\n",
+     "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_7aea426615eb4058b2b1540b",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_7aea426615eb4058b2b1540b",
+     "content": "ERROR: Error: ERROR TS2305: Module 'faust/sawbass' has no exported member 'SawbassChannel'.\n:\n2 │ import { Sawbass, SawbassChannel } from '../faust/sawbass';\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(2,19)\n\nERROR TS2304: Cannot find name 'SawbassChannel'.\n:\n5 │ midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(5,27)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n45 │ export class MidiChannel {\n│ ~~~~~~~~~~~\n└─ in midi/midisynth.ts(45,14)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n177 │ export abstract class MidiVoice {\n│ ~~~~~~~~~\n└─ in midi/midisynth.ts(177,23)\n\nFAILURE 2 compile error(s)"
+    },
+    {
+     "content": "\n\nThe error is that `SawbassChannel` is being imported and used, but the Faust transpiler only generated the `Sawbass` voice class — no `SawbassChannel` class exists. This happens when the Faust instrument only has the standard `freq`, `gate`, `gain` controls (no extra sliders), so only the voice class is exported.\n\nLet me check the current synth to see the exact import and usage:\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"pattern\": \"Sawbass\"}",
+        "name": "grep_synth"
+       },
+       "id": "call_9da8f5b57c0f4f28b2518c2f",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_9da8f5b57c0f4f28b2518c2f",
+     "content": "2: import { Sawbass, SawbassChannel } from '../faust/sawbass';\n5:     midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));"
+    },
+    {
+     "content": "\n\nThe fix is to:\n1. Remove `SawbassChannel` from the import\n2. Use `MidiChannel` instead of `SawbassChannel` for the midichannels registration\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"old_string\": \"import { Sawbass, SawbassChannel } from '../faust/sawbass';\", \"new_string\": \"import { Sawbass } from '../faust/sawbass';\"}",
+        "name": "edit_synth"
+       },
+       "id": "call_c785fc141ebc41e695fb6a3c",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_c785fc141ebc41e695fb6a3c",
+     "content": "applied 1 edit(s)"
+    },
+    {
+     "content": "\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"old_string\": \"midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\", \"new_string\": \"midichannels[0] = new MidiChannel(8, (channel: MidiChannel) => new Sawbass(channel));\"}",
+        "name": "edit_synth"
+       },
+       "id": "call_a417bfeb81d04f2fb8f50242",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_a417bfeb81d04f2fb8f50242",
+     "content": "applied 1 edit(s)"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "tool_calls",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\nNow let me compile again to verify the fix:\n\n",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{}",
+         "name": "compile"
+        },
+        "id": "call_6d78fc52bace46618da5582e",
+        "type": "function"
+       }
+      ]
+     }
+    }
+   ],
+   "created": 1784661310,
+   "id": "e20aa78fb82b4431ad36b4e29513ced4",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 27,
+    "prompt_tokens": 8443,
+    "prompt_tokens_details": {
+     "cached_tokens": 8320
+    },
+    "reasoning_tokens": 1,
+    "total_tokens": 8470
+   }
+  }
+ },
+ {
+  "request": {
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "messages": [
+    {
+     "role": "user",
+     "content": "the synth does not compile — find the error and fix it"
+    },
+    {
+     "content": "\n\n",
+     "reasoning_content": "The user says the synth does not compile and wants me to find and fix the error. I need to first compile to see what the error is, then examine the synth document to understand and fix the issue.\n\nLet me start by compiling to see the exact error message.\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_7aea426615eb4058b2b1540b",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_7aea426615eb4058b2b1540b",
+     "content": "ERROR: Error: ERROR TS2305: Module 'faust/sawbass' has no exported member 'SawbassChannel'.\n:\n2 │ import { Sawbass, SawbassChannel } from '../faust/sawbass';\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(2,19)\n\nERROR TS2304: Cannot find name 'SawbassChannel'.\n:\n5 │ midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\n│ ~~~~~~~~~~~~~~\n└─ in mixes/midi.mix.ts(5,27)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n45 │ export class MidiChannel {\n│ ~~~~~~~~~~~\n└─ in midi/midisynth.ts(45,14)\n\nWARNING AS235: Only variables, functions and enums become WebAssembly module exports.\n:\n177 │ export abstract class MidiVoice {\n│ ~~~~~~~~~\n└─ in midi/midisynth.ts(177,23)\n\nFAILURE 2 compile error(s)"
+    },
+    {
+     "content": "\n\nThe error is that `SawbassChannel` is being imported and used, but the Faust transpiler only generated the `Sawbass` voice class — no `SawbassChannel` class exists. This happens when the Faust instrument only has the standard `freq`, `gate`, `gain` controls (no extra sliders), so only the voice class is exported.\n\nLet me check the current synth to see the exact import and usage:\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"pattern\": \"Sawbass\"}",
+        "name": "grep_synth"
+       },
+       "id": "call_9da8f5b57c0f4f28b2518c2f",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_9da8f5b57c0f4f28b2518c2f",
+     "content": "2: import { Sawbass, SawbassChannel } from '../faust/sawbass';\n5:     midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));"
+    },
+    {
+     "content": "\n\nThe fix is to:\n1. Remove `SawbassChannel` from the import\n2. Use `MidiChannel` instead of `SawbassChannel` for the midichannels registration\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"old_string\": \"import { Sawbass, SawbassChannel } from '../faust/sawbass';\", \"new_string\": \"import { Sawbass } from '../faust/sawbass';\"}",
+        "name": "edit_synth"
+       },
+       "id": "call_c785fc141ebc41e695fb6a3c",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_c785fc141ebc41e695fb6a3c",
+     "content": "applied 1 edit(s)"
+    },
+    {
+     "content": "\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{\"old_string\": \"midichannels[0] = new SawbassChannel(8, (channel: MidiChannel) => new Sawbass(channel));\", \"new_string\": \"midichannels[0] = new MidiChannel(8, (channel: MidiChannel) => new Sawbass(channel));\"}",
+        "name": "edit_synth"
+       },
+       "id": "call_a417bfeb81d04f2fb8f50242",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_a417bfeb81d04f2fb8f50242",
+     "content": "applied 1 edit(s)"
+    },
+    {
+     "content": "\n\nNow let me compile again to verify the fix:\n\n",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "function": {
+        "arguments": "{}",
+        "name": "compile"
+       },
+       "id": "call_6d78fc52bace46618da5582e",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_6d78fc52bace46618da5582e",
+     "content": "compiled OK"
+    }
+   ]
+  },
+  "response": {
+   "choices": [
+    {
+     "finish_reason": "stop",
+     "index": 0,
+     "logprobs": null,
+     "matched_stop": 248046,
+     "message": {
+      "content": "\n\nFixed. The error was that `SawbassChannel` doesn't exist — the Faust instrument only has the standard controls (`freq`, `gate`, `gain`), so only the `Sawbass` voice class was generated. I changed the import to only include `Sawbass` and used `MidiChannel` for the channel registration instead.\n\nThe synth now compiles successfully.",
+      "role": "assistant"
+     }
+    }
+   ],
+   "created": 1784661313,
+   "id": "9aba95bd2d8c4614b0edd9e9ab1bcd95",
+   "model": "Qwen/Qwen3.5-122B-A10B",
+   "object": "chat.completion",
+   "usage": {
+    "completion_tokens": 86,
+    "prompt_tokens": 8487,
+    "prompt_tokens_details": {
+     "cached_tokens": 8384
+    },
+    "reasoning_tokens": 1,
+    "total_tokens": 8573
+   }
+  }
+ }
+]
