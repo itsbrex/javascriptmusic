@@ -10,6 +10,15 @@
 export const DEFAULT_BASE_URL = 'https://cloud-api.near.ai/v1';
 export const DEFAULT_MODEL = 'Qwen/Qwen3.5-122B-A10B';
 
+// cloud-api.near.ai only CORS-allowlists localhost origins — anywhere else
+// (webassemblymusic.pages.dev etc.) goes through the same-origin Pages
+// Function proxy at /nearai/v1 (functions/nearai/[[path]].js).
+export function resolveDefaultBaseUrl(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1'
+    ? DEFAULT_BASE_URL
+    : '/nearai/v1';
+}
+
 // Tool definitions in OpenAI function-calling format. Descriptions mirror
 // tools/studio-agent/server.mjs — keep them in sync when tools change.
 const str = (description) => ({ type: 'string', description });
@@ -66,8 +75,14 @@ export async function runAgentTurn({
   onRetry = () => {},
   maxIterations = 25,
   maxRetries = 4,
+  // Proxy mode: the same-origin Pages Function injects auth, system prompt
+  // and tools server-side — the client then sends neither key nor tools.
+  sendTools = true,
   sleepFn = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const bodyBase = sendTools ? { model, tools: toOpenAiTools(), tool_choice: 'auto' } : { model };
   for (let i = 0; i < maxIterations; i++) {
     let response;
     // Transient failures (rate limits, upstream 5xx) must not kill the turn —
@@ -75,8 +90,8 @@ export async function runAgentTurn({
     for (let attempt = 0; ; attempt++) {
       response = await fetchFn(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model, messages, tools: toOpenAiTools(), tool_choice: 'auto' }),
+        headers,
+        body: JSON.stringify({ ...bodyBase, messages }),
       });
       const retryable = response.status === 429 || response.status >= 500;
       if (response.ok || !retryable || attempt >= maxRetries) break;
